@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -29,19 +30,17 @@ class CameraFragment : Fragment() {
     private lateinit var sceneView: ArSceneView
     private lateinit var modelNode: ArModelNode
     private lateinit var placeButton: ExtendedFloatingActionButton
+    private lateinit var txtCoins: TextView
 
     private lateinit var sharedViewModel: SharedModelViewModel
+    private lateinit var economyManager: EconomyManager
 
     private val CAMERA_PERMISSION_CODE = 1001
-
     private var currentModelFile: String = "neutrofilo.glb"
 
     private var _binding: FragmentCameraBinding? = null
-
-    // This property is only valid between onCreateView and onDestroyView.
     private val binding get() = _binding!!
 
-    // Player de áudio para os sons do AR
     private var mediaPlayer: MediaPlayer? = null
 
     override fun onCreateView(
@@ -62,6 +61,7 @@ class CameraFragment : Fragment() {
         }
 
         placeButton = view.findViewById(R.id.place)
+        txtCoins = view.findViewById(R.id.txtCoins)
 
         placeButton.setOnClickListener {
             placeModel()
@@ -70,16 +70,17 @@ class CameraFragment : Fragment() {
         return view
     }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        stopSound() // Para o áudio ao sair da tela
-        _binding = null
-    }
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
+        economyManager = EconomyManager(requireContext())
+        updateCoinsUI()
         checkCameraPermission()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        stopSound()
+        _binding = null
     }
 
     private fun placeModel() {
@@ -88,6 +89,21 @@ class CameraFragment : Fragment() {
         modelNode.isScaleEditable = false
 
         sceneView.planeRenderer.isVisible = false
+
+        // Recompensa de 50 moedas por posicionar o modelo
+        val earnedCoins = 50
+        val totalCoins = economyManager.addCoins(earnedCoins)
+        updateCoinsUI()
+
+        Toast.makeText(
+            requireContext(),
+            "🏎️ Modelo fixado! Ganhaste +$earnedCoins moedas!",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun updateCoinsUI() {
+        txtCoins.text = "🪙 ${economyManager.getCoins()}"
     }
 
     private fun checkCameraPermission() {
@@ -137,19 +153,15 @@ class CameraFragment : Fragment() {
             ) {
                 sceneView.planeRenderer.isVisible = true
             }
-            // Permitir interação com o modelo
             isEditable = true
             isScaleEditable = false
         }
 
         sceneView.addChild(modelNode)
-
-        // Gerencia a reprodução de som conforme o modelo carregado
         handleModelSound(fileName)
     }
 
     private fun handleModelSound(fileName: String) {
-        // Verifica se o modelo atual é um carro para tocar o som
         val isCarModel = fileName.contains("audi", ignoreCase = true) ||
                 fileName.contains("bmw", ignoreCase = true) ||
                 fileName.contains("mclaren", ignoreCase = true) ||
@@ -164,8 +176,7 @@ class CameraFragment : Fragment() {
 
     private fun playSound(assetPath: String, isLooping: Boolean = false) {
         try {
-            stopSound() // Garante que nenhum outro som esteja tocando ao mesmo tempo
-
+            stopSound()
             val descriptor = requireContext().assets.openFd(assetPath)
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
@@ -191,10 +202,9 @@ class CameraFragment : Fragment() {
 
     private fun getFilePath(context: Context?, fileName: String): String {
         try {
-            context?.assets?.open(fileName)?.close() // Tenta abrir o arquivo dos assets
-            return fileName // Se abrir sem erro, presume-se que está nos assets
+            context?.assets?.open(fileName)?.close()
+            return fileName
         } catch (e: IOException) {
-            // Arquivo não encontrado nos assets, agora vamos procurar no filesDir
             val internalFile = File(context?.filesDir, fileName)
             if (internalFile.exists()) {
                 return Uri.fromFile(internalFile).toString()
