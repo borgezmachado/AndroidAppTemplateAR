@@ -4,6 +4,7 @@ import androidx.fragment.app.Fragment
 import com.ifpr.androidapptemplatear.R
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -37,9 +38,11 @@ class CameraFragment : Fragment() {
 
     private var _binding: FragmentCameraBinding? = null
 
-    // This property is only valid between onCreateView and
-    // onDestroyView.
+    // This property is only valid between onCreateView and onDestroyView.
     private val binding get() = _binding!!
+
+    // Player de áudio para os sons do AR
+    private var mediaPlayer: MediaPlayer? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -69,6 +72,7 @@ class CameraFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        stopSound() // Para o áudio ao sair da tela
         _binding = null
     }
 
@@ -118,6 +122,8 @@ class CameraFragment : Fragment() {
     }
 
     private fun loadModel(fileName: String) {
+        currentModelFile = fileName
+
         try {
             sceneView.removeChild(modelNode)
         } catch (e: Exception) {
@@ -126,19 +132,61 @@ class CameraFragment : Fragment() {
 
         modelNode = ArModelNode(sceneView.engine, PlacementMode.INSTANT).apply {
             loadModelGlbAsync(
-                glbFileLocation = getFilePath(requireContext(),fileName),
-                centerOrigin = Position(0f,0f,1f),
-
+                glbFileLocation = getFilePath(requireContext(), fileName),
+                centerOrigin = Position(0f, 0f, 1f),
             ) {
                 sceneView.planeRenderer.isVisible = true
             }
             // Permitir interação com o modelo
             isEditable = true
             isScaleEditable = false
-
         }
 
         sceneView.addChild(modelNode)
+
+        // Gerencia a reprodução de som conforme o modelo carregado
+        handleModelSound(fileName)
+    }
+
+    private fun handleModelSound(fileName: String) {
+        // Verifica se o modelo atual é um carro para tocar o som
+        val isCarModel = fileName.contains("audi", ignoreCase = true) ||
+                fileName.contains("bmw", ignoreCase = true) ||
+                fileName.contains("mclaren", ignoreCase = true) ||
+                fileName.contains("carro", ignoreCase = true)
+
+        if (isCarModel) {
+            playSound("SOUNDS/som carro.mp3", isLooping = true)
+        } else {
+            stopSound()
+        }
+    }
+
+    private fun playSound(assetPath: String, isLooping: Boolean = false) {
+        try {
+            stopSound() // Garante que nenhum outro som esteja tocando ao mesmo tempo
+
+            val descriptor = requireContext().assets.openFd(assetPath)
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
+                descriptor.close()
+                this.isLooping = isLooping
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopSound() {
+        mediaPlayer?.let {
+            if (it.isPlaying) {
+                it.stop()
+            }
+            it.release()
+        }
+        mediaPlayer = null
     }
 
     private fun getFilePath(context: Context?, fileName: String): String {
@@ -149,7 +197,7 @@ class CameraFragment : Fragment() {
             // Arquivo não encontrado nos assets, agora vamos procurar no filesDir
             val internalFile = File(context?.filesDir, fileName)
             if (internalFile.exists()) {
-                return  Uri.fromFile(internalFile).toString()
+                return Uri.fromFile(internalFile).toString()
             } else {
                 return "Arquivo não encontrado em assets nem em filesDir: $fileName"
             }
